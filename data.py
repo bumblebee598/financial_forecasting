@@ -3,8 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+import time
 
-ALPHA_API_KEY = "MN9F07S49NTST3DI"
+ALPHA_API_KEY = "022WWI8CMAV1LYO9"
 
 def get_monthly_adjusted_stock_data(symbol, output_size='full', output_format='pandas', start_date=None, end_date=None):
     """
@@ -193,10 +194,15 @@ def analyze_monthly_returns(df, symbol):
         'std_return': std_return,
         'annualized_return': annualized_return
     }
+STOCK_LIST = ["RBA", "AAPL", "MSFT", "GOOGL", "TOU", "IPCO", "BLX", "INE", "AAV.DB", "PXT",
+ "POU", "PEY", "OBE", "SOBO", "BEP.UN", "BEPC", "NPI", "INE.PR.A", "INE.PR.C", "ARX", "INE.DB.B",
+  "SCR", "NVA", "CNE", "VRY", "TCW", "WCP", "IMO", "CJ", "TPZ", "BEP.PR.R", "PSD", "ENB.PR.D",
+   "ENB.PF.V", "ENB.PR.A", "SGY", "FRU", "AQN", "CEN.H", "TRP.PR.F", "PPL", "LTC", "NSE",
+    "KEY", "CFW", "BNE", "CVE.PR.A", "TVE", "PAT", "TRP.PR.E", "TRP.PR.I", "CVE.PR.G", "BEP.PR.M", "PPL.PF.A."]
 
-def main():
+def main(SYMBOL):
     # Configuration
-    SYMBOL = "AAPL"
+        
     OUTPUT_DIR = "stock_data"
     START_DATE = "2020-01-01"
     END_DATE = datetime.now().strftime("%Y-%m-%d")
@@ -224,5 +230,9 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
 
-if __name__ == "__main__":
-    main()
+
+import time 
+
+for stock in STOCK_LIST:
+    time.sleep(20)
+    main(stock)
