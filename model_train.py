@@ -179,13 +179,32 @@ def build_and_train_xgboost(X_train, y_train, X_test, y_test):
     
     # Create and train model
     model = xgb.XGBRegressor(**params)
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_train, y_train), (X_test, y_test)],
-        eval_metric='rmse',
-        early_stopping_rounds=50,
-        verbose=False
-    )
+    
+    # In newer versions of XGBoost, early_stopping_rounds is passed as early_stopping
+    try:
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_train, y_train), (X_test, y_test)],
+            early_stopping_rounds=50,
+            verbose=False
+        )
+    except TypeError:
+        # If early_stopping_rounds causes an error, try with early_stopping instead
+        try:
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_train, y_train), (X_test, y_test)],
+                early_stopping=50,
+                verbose=False
+            )
+        except TypeError:
+            # If that also fails, try without early stopping
+            print("Warning: Early stopping not supported in this XGBoost version. Training without it.")
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_train, y_train), (X_test, y_test)],
+                verbose=False
+            )
     
     # Make predictions
     train_preds = model.predict(X_train)
@@ -500,58 +519,109 @@ def run_all_models(symbol, data):
     print(f"Processing {symbol} with {len(data)} data points")
     print(f"{'='*50}")
     
+    # Check if we have enough data points
+    if len(data) < 24:  # Need at least 2 years of monthly data
+        print(f"WARNING: Not enough data points for {symbol}. Need at least 24 months, but got {len(data)}.")
+        print("Skipping this stock.")
+        return None
+    
     # Add features
     processed_data = create_features(data)
     print(f"Created features. Shape: {processed_data.shape}")
+    
+    # Check if processed data is empty
+    if processed_data.shape[0] == 0:
+        print(f"ERROR: No data left after feature creation and NaN removal for {symbol}.")
+        print("This can happen with stocks that have limited history.")
+        print("Skipping this stock.")
+        return None
     
     # Define target column (3-month ahead price)
     target_column = f'target_{PREDICTION_MONTHS}m'
     
     # MODEL 1: XGBOOST
     print("\n1. Training XGBoost model...")
-    X_train, X_test, y_train, y_test, features = prepare_data_for_xgboost(
-        processed_data, target_column)
-    
-    xgb_model, xgb_preds, xgb_metrics = build_and_train_xgboost(
-        X_train, y_train, X_test, y_test)
+    try:
+        X_train, X_test, y_train, y_test, features = prepare_data_for_xgboost(
+            processed_data, target_column)
+        
+        # Check if we have enough data for training
+        if len(X_train) < 10 or len(X_test) < 5:
+            print(f"WARNING: Not enough data for training/testing XGBoost for {symbol}.")
+            print(f"Train set: {len(X_train)}, Test set: {len(X_test)}")
+            xgb_model, xgb_preds, xgb_metrics = None, None, (None, None, None, None)
+        else:
+            xgb_model, xgb_preds, xgb_metrics = build_and_train_xgboost(
+                X_train, y_train, X_test, y_test)
+    except Exception as e:
+        print(f"Error in XGBoost model: {e}")
+        xgb_model, xgb_preds, xgb_metrics = None, None, (None, None, None, None)
     
     # MODEL 2: LSTM
     print("\n2. Training LSTM model...")
-    X_train_lstm, X_test_lstm, y_train_lstm, y_test_lstm, scaler_lstm, lstm_features = prepare_data_for_lstm(
-        processed_data, target_column)
-    
-    lstm_model, lstm_preds, lstm_metrics, lstm_history = build_and_train_lstm(
-        X_train_lstm, y_train_lstm, X_test_lstm, y_test_lstm)
+    try:
+        X_train_lstm, X_test_lstm, y_train_lstm, y_test_lstm, scaler_lstm, lstm_features = prepare_data_for_lstm(
+            processed_data, target_column)
+        
+        # Check if we have enough data for LSTM
+        if len(X_train_lstm) < 10 or len(X_test_lstm) < 5:
+            print(f"WARNING: Not enough data for training/testing LSTM for {symbol}.")
+            print(f"Train set: {len(X_train_lstm)}, Test set: {len(X_test_lstm)}")
+            lstm_model, lstm_preds, lstm_metrics, lstm_history = None, None, (None, None, None, None), None
+        else:
+            lstm_model, lstm_preds, lstm_metrics, lstm_history = build_and_train_lstm(
+                X_train_lstm, y_train_lstm, X_test_lstm, y_test_lstm)
+    except Exception as e:
+        print(f"Error in LSTM model: {e}")
+        lstm_model, lstm_preds, lstm_metrics, lstm_history = None, None, (None, None, None, None), None
     
     # MODEL 3: PROPHET
     print("\n3. Training Prophet model...")
-    train_prophet, test_prophet = prepare_data_for_prophet(processed_data, target_column)
+    try:
+        train_prophet, test_prophet = prepare_data_for_prophet(processed_data, target_column)
+        
+        # Check if we have enough data for Prophet
+        if len(train_prophet) < 10 or len(test_prophet) < 5:
+            print(f"WARNING: Not enough data for training/testing Prophet for {symbol}.")
+            print(f"Train set: {len(train_prophet)}, Test set: {len(test_prophet)}")
+            prophet_model, prophet_forecast, future_forecast, prophet_metrics = None, None, None, (None, None, None)
+        else:
+            prophet_model, prophet_forecast, future_forecast, prophet_metrics = build_and_train_prophet(
+                train_prophet, test_prophet)
+    except Exception as e:
+        print(f"Error in Prophet model: {e}")
+        prophet_model, prophet_forecast, future_forecast, prophet_metrics = None, None, None, (None, None, None)
     
-    prophet_model, prophet_forecast, future_forecast, prophet_metrics = build_and_train_prophet(
-        train_prophet, test_prophet)
+    # Check if any models were successfully trained
+    if xgb_model is None and lstm_model is None and prophet_model is None:
+        print(f"\nNo models could be trained for {symbol} due to insufficient data.")
+        return None
     
     # Compare and plot results
     print("\nPlotting results...")
-    plot_file = plot_results(
-        symbol, data, processed_data, 
-        xgb_preds, lstm_preds.flatten(), 
-        prophet_forecast, future_forecast, 
-        target_column
-    )
-    
-    # Compare metrics
-    metrics_df, metrics_chart = evaluate_models(
-        symbol, data, xgb_metrics, lstm_metrics, prophet_metrics)
-    
-    print("\nResults saved to:")
-    print(f"- Plot: {plot_file}")
-    print(f"- Metrics: {metrics_chart}")
+    try:
+        plot_file = plot_results(
+            symbol, data, processed_data, 
+            xgb_preds, lstm_preds.flatten() if lstm_preds is not None else None, 
+            prophet_forecast, future_forecast, 
+            target_column
+        )
+        
+        # Compare metrics
+        metrics_df, metrics_chart = evaluate_models(
+            symbol, data, xgb_metrics, lstm_metrics, prophet_metrics)
+        
+        print("\nResults saved to:")
+        print(f"- Plot: {plot_file}")
+        print(f"- Metrics: {metrics_chart}")
+    except Exception as e:
+        print(f"Error in plotting/evaluation: {e}")
     
     return {
         'xgboost': (xgb_model, xgb_metrics),
         'lstm': (lstm_model, lstm_metrics),
         'prophet': (prophet_model, prophet_metrics),
-        'metrics': metrics_df
+        'metrics': metrics_df if 'metrics_df' in locals() else None
     }
 
 def main():
@@ -574,7 +644,23 @@ def main():
     results = {}
     
     for symbol, data in all_stock_data.items():
-        results[symbol] = run_all_models(symbol, data)
+        try:
+            result = run_all_models(symbol, data)
+            if result is not None:
+                results[symbol] = result
+        except Exception as e:
+            print(f"Error processing {symbol}: {e}")
+    
+    # Print summary of successful models
+    print("\n" + "="*50)
+    print("SUMMARY OF RESULTS")
+    print("="*50)
+    print(f"Successfully processed {len(results)} out of {len(all_stock_data)} stocks")
+    
+    if results:
+        print("\nStocks with successful models:")
+        for symbol in results.keys():
+            print(f"- {symbol}")
     
     print("\nAll models completed!")
 
