@@ -53,20 +53,43 @@ def get_monthly_adjusted_stock_data(symbol, output_size='full', output_format='p
     # Parse response
     data = response.json()
     
+    # Print the entire response for debugging
+    print(f"API Response: {data}")
+    
+    # Check for rate limiting or API key issues
+    if 'Note' in data:
+        print(f"API Note: {data['Note']}")
+        raise Exception("API rate limit reached. Please try again later or use a different API key.")
+    
     # Check for error messages
     if 'Error Message' in data:
         raise Exception(f"API returned an error: {data['Error Message']}")
     
     # Check if data contains the expected time series
-    if 'Monthly Adjusted Time Series' not in data:
-        raise Exception(f"No monthly adjusted time series found for {symbol}")
+    time_series_key = None
+    possible_keys = [
+        'Monthly Adjusted Time Series',
+        'Monthly Time Series',
+        'Time Series (Monthly)',
+        'Time Series (Monthly Adjusted)'
+    ]
+    
+    for key in possible_keys:
+        if key in data:
+            time_series_key = key
+            print(f"Found time series data under key: '{key}'")
+            break
+    
+    if time_series_key is None:
+        print(f"Available keys in response: {list(data.keys())}")
+        raise Exception(f"No monthly time series found for {symbol}. Response: {data}")
     
     # Return as JSON if requested
     if output_format.lower() == 'json':
         return data
     
     # Convert to pandas DataFrame
-    monthly_data = data['Monthly Adjusted Time Series']
+    monthly_data = data[time_series_key]
     df = pd.DataFrame.from_dict(monthly_data, orient='index')
     
     # Convert string values to numeric
@@ -194,15 +217,18 @@ def analyze_monthly_returns(df, symbol):
         'std_return': std_return,
         'annualized_return': annualized_return
     }
-STOCK_LIST = ["RBA", "AAPL", "MSFT", "GOOGL", "TOU", "IPCO", "BLX", "INE", "AAV.DB", "PXT",
- "POU", "PEY", "OBE", "SOBO", "BEP.UN", "BEPC", "NPI", "INE.PR.A", "INE.PR.C", "ARX", "INE.DB.B",
-  "SCR", "NVA", "CNE", "VRY", "TCW", "WCP", "IMO", "CJ", "TPZ", "BEP.PR.R", "PSD", "ENB.PR.D",
-   "ENB.PF.V", "ENB.PR.A", "SGY", "FRU", "AQN", "CEN.H", "TRP.PR.F", "PPL", "LTC", "NSE",
-    "KEY", "CFW", "BNE", "CVE.PR.A", "TVE", "PAT", "TRP.PR.E", "TRP.PR.I", "CVE.PR.G", "BEP.PR.M", "PPL.PF.A."]
+
+STOCK_LIST = ["RY.TO","INE.DB.B.TO",
+              "SCR.TO", "NVA.TO", "CNE.TO", "VRY.TO", "TCW.TO", "WCP.TO", "IMO.TO", 
+              "CJ.TO", "TPZ.TO", "BEP.PR.R.TO", "PSD.TO", "ENB.PR.D.TO", "ENB.PF.V.TO", 
+              "ENB.PR.A.TO", "SGY.TO", "FRU.TO", "AQN.TO", "CEN.H.TO", "TRP.PR.F.TO", 
+              "PPL.TO", "LTC.TO", "NSE.TO", "KEY.TO", "CFW.TO", "BNE.TO", "CVE.PR.A.TO", 
+              "TVE.TO", "PAT.TO", "TRP.PR.E.TO", "TRP.PR.I.TO", "CVE.PR.G.TO", 
+              "BEP.PR.M.TO", "PPL.PF.A.TO"]
 
 def main(SYMBOL):
     # Configuration
-        
+
     OUTPUT_DIR = "stock_data"
     START_DATE = "2020-01-01"
     END_DATE = datetime.now().strftime("%Y-%m-%d")
@@ -234,5 +260,6 @@ def main(SYMBOL):
 import time 
 
 for stock in STOCK_LIST:
-    time.sleep(20)
+    time.sleep(15)
     main(stock)
+
